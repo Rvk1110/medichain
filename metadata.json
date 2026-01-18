@@ -1,0 +1,5 @@
+{
+  "name": "MediChain Access",
+  "description": "A lightweight digital health record platform demonstrating secure, temporary access via appointment-based keys and blockchain logging.",
+  "requestFramePermissions": []
+}
