@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 // 👇 UPDATE THIS URL to your actual Vercel link
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://medichain-YOUR-APP-NAME.vercel.app'],
+    origin: ['http://localhost:5173', 'https://medichain-dtl.vercel.app/'],
     credentials: true
 }));
 
