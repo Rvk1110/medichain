@@ -12,7 +12,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+// 👇 UPDATE THIS URL to your actual Vercel link
+app.use(cors({
+    origin: ['http://localhost:5173', 'https://medichain-YOUR-APP-NAME.vercel.app'],
+    credentials: true
+}));
+
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -27,11 +32,15 @@ app.get('/health', (req, res) => {
 
 // Start Server
 const start = async () => {
-    await connectDB();
-    await sequelize.sync(); // Sync models
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
+    try {
+        await connectDB();
+        await sequelize.sync(); // Sync models
+        app.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error('Failed to start server:', error);
+    }
 };
 
 start();
