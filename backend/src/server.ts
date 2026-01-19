@@ -11,11 +11,16 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-// 👇 UPDATE THIS URL to your actual Vercel link
+// Middleware - CORS configuration for Vercel
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://medichain-dtl.vercel.app/'],
-    credentials: true
+    origin: [
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://medichain-dtl.vercel.app'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(helmet());
