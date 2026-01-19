@@ -11,6 +11,7 @@ export class MedicalRecord extends Model {
     public ivKey?: string; // Cloudinary public ID for IV file
     public hash!: string; // SHA-256 for integrity
     public mimeType!: string;
+    public isEmergencyAccessible?: boolean; // Can be accessed in emergencies
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
 }
@@ -49,6 +50,11 @@ MedicalRecord.init(
         mimeType: {
             type: DataTypes.STRING,
             allowNull: false,
+        },
+        isEmergencyAccessible: {
+            type: DataTypes.BOOLEAN,
+            allowNull: true,
+            defaultValue: false,
         },
     },
     {

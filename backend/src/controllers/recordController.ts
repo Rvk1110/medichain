@@ -1,82 +1,68 @@
-import { Request, Response } from 'express';
-import { MedicalRecord } from '../models/MedicalRecord';
+import { Response } from 'express';
+import { AuthRequest } from '../middleware/auth';
 import path from 'path';
 import fs from 'fs';
-import { encryptFile, decryptFile, generateFileHash } from '../services/cryptoService';
+import { MedicalRecord } from '../models/MedicalRecord';
 import { UserRole } from '../models/User';
-import { AccessLog } from '../models/AccessLog';
+import { encryptFile, decryptFile, generateFileHash } from '../services/cryptoService';
 
-// Extend Request to handle file from Multer
-interface AuthRequest extends Request {
-    user?: any;
-    file?: Express.Multer.File;
-}
-
-// Upload Record (Patient only)
 export const uploadRecord = async (req: AuthRequest, res: Response) => {
     try {
         const { type } = req.body;
-        const user = req.user;
+        const file = req.file;
+        const user = req.user!;
 
-        if (user.role !== UserRole.PATIENT) {
-            return res.status(403).json({ error: 'Only patients can upload records' });
-        }
+        if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file uploaded' });
-        }
+        const fileData = fs.readFileSync(file.path);
+        const hash = generateFileHash(fileData);
 
-        // 1. Read file buffer
-        const fileBuffer = fs.readFileSync(req.file.path);
+        // Encrypt
+        const { encryptedData, iv } = encryptFile(fileData);
 
-        // 2. Generate Hash
-        const fileHash = generateFileHash(fileBuffer);
-
-        // 3. Encrypt
-        const { encryptedData, iv } = encryptFile(fileBuffer);
-
-        // 4. Upload to Cloudinary (instead of local storage)
+        // Upload to Cloudinary
         const { uploadToCloud } = await import('../services/cloudinaryService');
+        const encryptedFileName = `${user.id}_${Date.now()}_encrypted.bin`;
+        const ivFileName = `${user.id}_${Date.now()}_iv.bin`;
 
-        const timestamp = Date.now();
-        const encryptedFileName = `${user.id}_${timestamp}.enc`;
-        const ivFileName = `${user.id}_${timestamp}.iv`;
-
-        // Upload encrypted file and IV to cloud
         const encryptedUpload = await uploadToCloud(encryptedData, encryptedFileName);
         const ivUpload = await uploadToCloud(iv, ivFileName);
 
-        // 5. Save Metadata to DB
-        const record = await MedicalRecord.create({
+        // Save metadata
+        let record;
+        record = await MedicalRecord.create({
             ownerId: user.id,
             type,
-            fileKey: encryptedUpload.publicId, // Store Cloudinary public ID
-            hash: fileHash,
-            mimeType: req.file.mimetype,
-            // Store IV public ID in a new field (we'll add this to model)
+            fileKey: encryptedUpload.publicId,
             ivKey: ivUpload.publicId,
+            hash,
+            mimeType: file.mimetype,
+            isEmergencyAccessible: false // Default to not emergency accessible
         });
 
-        // Cleanup temp Multer file
-        fs.unlinkSync(req.file.path);
+        // Cleanup temp file
+        fs.unlinkSync(file.path);
 
-        res.status(201).json({ message: 'File uploaded and encrypted securely', recordId: record.id });
-
+        res.status(201).json({ message: 'Record uploaded successfully', recordId: record.id });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: 'Upload failed' });
+        res.status(500).json({ error: 'Error uploading record' });
     }
 };
 
-// Get Record (Protected by Middleware)
 export const getRecord = async (req: AuthRequest, res: Response) => {
     try {
-        const recordId = req.params.id as string;
-        const record = await MedicalRecord.findByPk(recordId);
-
+        const { id } = req.params;
+        const record = await MedicalRecord.findByPk(Number(id));
         if (!record) return res.status(404).json({ error: 'Record not found' });
 
-        // Download from Cloudinary instead of local filesystem
+        // Access Control: Patient owns it OR Doctor has valid access
+        const user = req.user!;
+        if (user.role === UserRole.PATIENT && record.ownerId !== user.id) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        // Download from Cloudinary
         const { downloadFromCloud } = await import('../services/cloudinaryService');
 
         try {
@@ -110,7 +96,7 @@ export const getRecord = async (req: AuthRequest, res: Response) => {
 
 export const listRecords = async (req: AuthRequest, res: Response) => {
     try {
-        const user = req.user;
+        const user = req.user!;
         let records;
 
         if (user.role === UserRole.PATIENT) {
@@ -119,11 +105,60 @@ export const listRecords = async (req: AuthRequest, res: Response) => {
             const patientId = req.query.patientId;
             if (!patientId) return res.status(400).json({ error: "Doctor must provide patientId to list records" });
 
-            records = await MedicalRecord.findAll({ where: { ownerId: patientId } });
+            records = await MedicalRecord.findAll({ where: { ownerId: Number(patientId) } });
         }
 
         res.status(200).json(records);
     } catch (error) {
         res.status(500).json({ error: 'Error listing records' });
+    }
+};
+
+export const emergencyAccess = async (req: AuthRequest, res: Response) => {
+    try {
+        const { phoneNumber } = req.body;
+        const doctor = req.user;
+
+        // Only doctors can use emergency access
+        if (doctor?.role !== UserRole.DOCTOR) {
+            return res.status(403).json({ error: 'Only doctors can use emergency access' });
+        }
+
+        // Find patient by phone number
+        const { User } = await import('../models/User');
+        const patient = await User.findOne({
+            where: {
+                phone: phoneNumber,
+                role: UserRole.PATIENT
+            }
+        });
+
+        if (!patient) {
+            return res.status(404).json({ error: 'Patient not found' });
+        }
+
+        // Get only emergency-accessible records
+        const records = await MedicalRecord.findAll({
+            where: {
+                ownerId: patient.id,
+                isEmergencyAccessible: true
+            }
+        });
+
+        // Log emergency access
+        console.log(`EMERGENCY ACCESS: Dr. ${doctor.id} accessed patient ${patient.id} records`);
+
+        res.status(200).json({
+            patient: {
+                id: patient.id,
+                name: patient.name,
+                phone: patient.phone,
+                emergencyInfo: (patient as any).emergencyInfo
+            },
+            records
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error accessing emergency records' });
     }
 };

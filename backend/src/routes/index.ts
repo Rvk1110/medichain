@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { registerPatient, registerDoctor, login, verifyLoginOTP } from '../controllers/authController';
-import { uploadRecord, getRecord, listRecords } from '../controllers/recordController';
+import { uploadRecord, getRecord, listRecords, emergencyAccess } from '../controllers/recordController';
 import { bookAppointment, getAppointments } from '../controllers/appointmentController';
 import { authenticate, authorize } from '../middleware/auth';
 import { checkAccess } from '../middleware/accessControl';
@@ -22,6 +22,8 @@ router.post('/records/upload', authenticate, authorize([UserRole.PATIENT]), uplo
 router.get('/records/list', authenticate, listRecords);
 // The Critical Secure Endpoint:
 router.post('/records/:id/access', authenticate, authorize([UserRole.DOCTOR, UserRole.PATIENT]), checkAccess, getRecord);
+// Emergency Access - doctors only
+router.post('/records/emergency-access', authenticate, authorize([UserRole.DOCTOR]), emergencyAccess);
 // Note: Using POST for access to allow Body (Location Lat/Lng) efficiently, though GET with Headers is also fine. 
 // User Request said: "Doctor's device must send: Latitude, Longitude... Location check must happen: At access time"
 // To send JSON body with GET is possible but unconventional. POST for "Requesting Access" is semantically acceptable.
