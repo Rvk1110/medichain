@@ -66,10 +66,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Load user data on mount if token exists
   useEffect(() => {
-    if (token) {
-      // TODO: Fetch current user from backend
-      // For now, we'll implement this later
-    }
+    const loadData = async () => {
+      if (token) {
+        await fetchRecords();
+        await fetchAppointments();
+      }
+    };
+    loadData();
   }, [token]);
 
   // Helper to add to immutable ledger
