@@ -43,12 +43,18 @@ interface StoreContextType extends AppState {
   checkAutoKeys: () => void;
 }
 
+
 const StoreContext = createContext<StoreContextType | null>(null);
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<AppState>({
     currentUser: null,
-    users: [],
+    users: [
+      // Mock doctors for appointment booking
+      { id: '1', name: 'Dr. Priya Sharma', phoneNumber: '9876543210', role: UserRole.DOCTOR, specialty: 'CARDIOLOGY' as any },
+      { id: '2', name: 'Dr. Rajesh Kumar', phoneNumber: '9876543211', role: UserRole.DOCTOR, specialty: 'GENERAL_PRACTICE' as any },
+      { id: '3', name: 'Dr. Anita Desai', phoneNumber: '9876543212', role: UserRole.DOCTOR, specialty: 'PATHOLOGY' as any },
+    ],
     records: [],
     appointments: [],
     accessKeys: [],
