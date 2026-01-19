@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 dotenv.config();
 
-const MASTER_OTP = '123456'; // Mock OTP for reliable testing
+const MASTER_OTP = '1234'; // Mock OTP for reliable testing
 
 export const sendOTP = async (phone: string): Promise<boolean> => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
