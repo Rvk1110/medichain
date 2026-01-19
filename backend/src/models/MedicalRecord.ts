@@ -7,7 +7,8 @@ export class MedicalRecord extends Model {
     public id!: number;
     public ownerId!: number;
     public type!: Specialty; // Matches doctor specialty
-    public fileKey!: string; // Path or object key
+    public fileKey!: string; // Cloudinary public ID for encrypted file
+    public ivKey?: string; // Cloudinary public ID for IV file
     public hash!: string; // SHA-256 for integrity
     public mimeType!: string;
     public readonly createdAt!: Date;
@@ -36,6 +37,10 @@ MedicalRecord.init(
         fileKey: {
             type: DataTypes.STRING,
             allowNull: false,
+        },
+        ivKey: {
+            type: DataTypes.STRING,
+            allowNull: true,
         },
         hash: {
             type: DataTypes.STRING,

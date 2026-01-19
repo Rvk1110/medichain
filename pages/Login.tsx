@@ -4,14 +4,16 @@ import { UserRole, User } from '../types';
 import { UserCircle2, Stethoscope, Smartphone, ShieldCheck, ArrowRight, Users, UserPlus, HeartPulse } from 'lucide-react';
 
 export const Login: React.FC = () => {
-  const { users, login, getUsersByPhone, registerPatient } = useStore();
+  const { login, sendOTP, registerPatient } = useStore();
   const [mode, setMode] = useState<'PATIENT' | 'STAFF'>('PATIENT');
-  
+
   // Patient Login State
   const [phoneNumber, setPhoneNumber] = useState('');
   const [step, setStep] = useState<'PHONE' | 'OTP' | 'PROFILE' | 'REGISTER'>('PHONE');
   const [foundProfiles, setFoundProfiles] = useState<User[]>([]);
   const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   // Registration State
   const [regName, setRegName] = useState('');
@@ -22,36 +24,62 @@ export const Login: React.FC = () => {
   const [staffId, setStaffId] = useState('');
 
   // --- Patient Logic ---
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    const profiles = getUsersByPhone(phoneNumber);
-    if (profiles.length > 0) {
-      setFoundProfiles(profiles);
+    setLoading(true);
+    setError('');
+
+    try {
+      await sendOTP(phoneNumber);
       setStep('OTP');
-    } else {
-      if (confirm("No accounts found with this number. Would you like to create a new profile?")) {
+      alert('OTP sent to your phone! Check backend console for OTP code.');
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        if (confirm("No account found with this number. Would you like to create a new profile?")) {
           setRegPhone(phoneNumber);
           setStep('REGISTER');
+        }
+      } else {
+        setError('Failed to send OTP. Please try again.');
       }
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp === '1234') { // Mock OTP
-      setStep('PROFILE');
-    } else {
-      alert("Invalid OTP (Use 1234)");
+    setLoading(true);
+    setError('');
+
+    try {
+      await login(phoneNumber, otp);
+      // Login successful - user will be redirected by App.tsx
+    } catch (err: any) {
+      setError('Invalid OTP. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (regName && regPhone) {
-          registerPatient(regName, regPhone, regEmergency);
-          setStep('PHONE'); // Reset to login
-          alert("Registration Successful! Please login with your phone number.");
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    if (regName && regPhone) {
+      try {
+        await registerPatient(regName, regPhone, regEmergency);
+        setStep('PHONE');
+        setPhoneNumber(regPhone);
+        alert("Registration successful! OTP sent to your phone. Check backend console.");
+        setStep('OTP'); // Go directly to OTP step
+      } catch (err: any) {
+        setError('Registration failed. Phone number may already be registered.');
+      } finally {
+        setLoading(false);
       }
+    }
   };
 
   const selectProfile = (userId: string) => {
@@ -59,20 +87,27 @@ export const Login: React.FC = () => {
   };
 
   // --- Staff Logic ---
-  const handleStaffLogin = (e: React.FormEvent) => {
+  const handleStaffLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const user = users.find(u => u.id === staffId && (u.role === UserRole.DOCTOR || u.role === UserRole.LAB_TECHNICIAN));
-    if (user) {
-      login(user.id);
-    } else {
-      alert("Invalid Staff ID. Try 'd1', 'd2' or 'l1'.");
+    setLoading(true);
+    setError('');
+
+    try {
+      // For staff, we'll use phone number authentication too
+      // Staff should register first with their phone number
+      alert('Staff login: Please use your registered phone number to login.');
+      setMode('PATIENT');
+    } catch (err: any) {
+      setError('Invalid credentials.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="min-h-[80vh] flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        
+
         {/* Header */}
         <div className="bg-slate-900 p-6 text-center">
           <h1 className="text-2xl font-bold text-white mb-2">MediChain Access</h1>
@@ -81,13 +116,13 @@ export const Login: React.FC = () => {
 
         {/* Tabs */}
         <div className="flex border-b border-slate-200">
-          <button 
+          <button
             onClick={() => { setMode('PATIENT'); setStep('PHONE'); }}
             className={`flex-1 py-4 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${mode === 'PATIENT' ? 'text-primary border-b-2 border-primary bg-sky-50' : 'text-slate-500 hover:bg-slate-50'}`}
           >
             <UserCircle2 size={18} /> Patient / Family
           </button>
-          <button 
+          <button
             onClick={() => setMode('STAFF')}
             className={`flex-1 py-4 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${mode === 'STAFF' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-emerald-50' : 'text-slate-500 hover:bg-slate-50'}`}
           >
@@ -97,7 +132,7 @@ export const Login: React.FC = () => {
 
         {/* Body */}
         <div className="p-8">
-          
+
           {/* --- PATIENT FLOW --- */}
           {mode === 'PATIENT' && (
             <div>
@@ -112,25 +147,25 @@ export const Login: React.FC = () => {
                   </div>
                   <form onSubmit={handleSendOtp}>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone Number</label>
-                    <input 
-                      type="tel" 
+                    <input
+                      type="tel"
                       value={phoneNumber}
                       onChange={e => setPhoneNumber(e.target.value)}
                       placeholder="e.g. 9980099800"
                       className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none mb-4 bg-white text-slate-900"
                     />
                     <button type="submit" className="w-full bg-primary text-white py-3 rounded-lg font-semibold hover:bg-sky-600 transition-colors">
-                        Send OTP
+                      Send OTP
                     </button>
                   </form>
-                  
+
                   <div className="relative flex py-2 items-center">
                     <div className="flex-grow border-t border-slate-200"></div>
                     <span className="flex-shrink-0 mx-4 text-slate-400 text-xs">OR</span>
                     <div className="flex-grow border-t border-slate-200"></div>
                   </div>
 
-                  <button 
+                  <button
                     onClick={() => { setStep('REGISTER'); setRegPhone(phoneNumber); }}
                     className="w-full bg-white border border-slate-300 text-slate-700 py-3 rounded-lg font-semibold hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
                   >
@@ -140,58 +175,58 @@ export const Login: React.FC = () => {
               )}
 
               {step === 'REGISTER' && (
-                  <form onSubmit={handleRegister} className="space-y-4 animate-fade-in">
-                      <div className="text-center mb-6">
-                        <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <UserPlus className="text-green-600" />
-                        </div>
-                        <h3 className="font-bold text-slate-800">New Patient Registration</h3>
-                        <p className="text-xs text-slate-500">Create a secure medical identity.</p>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
-                        <input 
-                            required
-                            type="text" 
-                            value={regName}
-                            onChange={e => setRegName(e.target.value)}
-                            placeholder="e.g. Aditi Rao"
-                            className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-white text-slate-900 placeholder-slate-400"
-                        />
-                      </div>
+                <form onSubmit={handleRegister} className="space-y-4 animate-fade-in">
+                  <div className="text-center mb-6">
+                    <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <UserPlus className="text-green-600" />
+                    </div>
+                    <h3 className="font-bold text-slate-800">New Patient Registration</h3>
+                    <p className="text-xs text-slate-500">Create a secure medical identity.</p>
+                  </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Mobile Number</label>
-                        <input 
-                            required
-                            type="tel" 
-                            value={regPhone}
-                            onChange={e => setRegPhone(e.target.value)}
-                            placeholder="e.g. 9980099800"
-                            className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-white text-slate-900 placeholder-slate-400"
-                        />
-                      </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
+                    <input
+                      required
+                      type="text"
+                      value={regName}
+                      onChange={e => setRegName(e.target.value)}
+                      placeholder="e.g. Aditi Rao"
+                      className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-white text-slate-900 placeholder-slate-400"
+                    />
+                  </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Vital Emergency Info (Optional)</label>
-                        <textarea 
-                            value={regEmergency}
-                            onChange={e => setRegEmergency(e.target.value)}
-                            placeholder="e.g. Blood Type O+, Diabetes, Penicillin Allergy"
-                            className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none h-20 text-sm bg-white text-slate-900 placeholder-slate-400"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1">This info will be visible to doctors during emergency overrides.</p>
-                      </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Mobile Number</label>
+                    <input
+                      required
+                      type="tel"
+                      value={regPhone}
+                      onChange={e => setRegPhone(e.target.value)}
+                      placeholder="e.g. 9980099800"
+                      className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-white text-slate-900 placeholder-slate-400"
+                    />
+                  </div>
 
-                      <button type="submit" className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors">
-                        Register & Create ID
-                      </button>
-                      
-                      <button type="button" onClick={() => setStep('PHONE')} className="w-full text-slate-500 text-sm mt-2">
-                        Cancel
-                      </button>
-                  </form>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Vital Emergency Info (Optional)</label>
+                    <textarea
+                      value={regEmergency}
+                      onChange={e => setRegEmergency(e.target.value)}
+                      placeholder="e.g. Blood Type O+, Diabetes, Penicillin Allergy"
+                      className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none h-20 text-sm bg-white text-slate-900 placeholder-slate-400"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">This info will be visible to doctors during emergency overrides.</p>
+                  </div>
+
+                  <button type="submit" className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors">
+                    Register & Create ID
+                  </button>
+
+                  <button type="button" onClick={() => setStep('PHONE')} className="w-full text-slate-500 text-sm mt-2">
+                    Cancel
+                  </button>
+                </form>
               )}
 
               {step === 'OTP' && (
@@ -201,8 +236,8 @@ export const Login: React.FC = () => {
                     <p className="text-xs text-slate-500">Sent to {phoneNumber}</p>
                   </div>
                   <div>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={otp}
                       onChange={e => setOtp(e.target.value)}
                       placeholder="1234"
@@ -255,28 +290,28 @@ export const Login: React.FC = () => {
 
           {/* --- STAFF FLOW --- */}
           {mode === 'STAFF' && (
-             <form onSubmit={handleStaffLogin} className="space-y-4 animate-fade-in">
+            <form onSubmit={handleStaffLogin} className="space-y-4 animate-fade-in">
               <div className="text-center mb-6">
-                 <div className="h-12 w-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <ShieldCheck className="text-emerald-600" />
-                  </div>
+                <div className="h-12 w-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <ShieldCheck className="text-emerald-600" />
+                </div>
                 <h3 className="font-bold text-slate-800">Staff Login</h3>
                 <p className="text-xs text-slate-500">Doctors, Nurses, and Lab Technicians</p>
               </div>
-              
+
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Staff ID / Username</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={staffId}
                   onChange={e => setStaffId(e.target.value)}
                   placeholder="e.g. d1, d2, l1"
                   className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none bg-white text-slate-900 placeholder-slate-400"
                 />
-                 <div className="flex gap-2 mt-2">
-                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500">Doctor: d1</span>
-                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500">Lab: l1</span>
-                 </div>
+                <div className="flex gap-2 mt-2">
+                  <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500">Doctor: d1</span>
+                  <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500">Lab: l1</span>
+                </div>
               </div>
 
               <button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 transition-colors">

@@ -35,24 +35,26 @@ export const uploadRecord = async (req: AuthRequest, res: Response) => {
         // 3. Encrypt
         const { encryptedData, iv } = encryptFile(fileBuffer);
 
-        // 4. Save Encrypted File
-        const uploadsDir = path.join(__dirname, '../../uploads');
-        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+        // 4. Upload to Cloudinary (instead of local storage)
+        const { uploadToCloud } = await import('../services/cloudinaryService');
 
         const timestamp = Date.now();
         const encryptedFileName = `${user.id}_${timestamp}.enc`;
         const ivFileName = `${user.id}_${timestamp}.iv`;
 
-        fs.writeFileSync(path.join(uploadsDir, encryptedFileName), encryptedData);
-        fs.writeFileSync(path.join(uploadsDir, ivFileName), iv); // In prod, store IV in DB or prepend to file
+        // Upload encrypted file and IV to cloud
+        const encryptedUpload = await uploadToCloud(encryptedData, encryptedFileName);
+        const ivUpload = await uploadToCloud(iv, ivFileName);
 
         // 5. Save Metadata to DB
         const record = await MedicalRecord.create({
             ownerId: user.id,
             type,
-            fileKey: encryptedFileName, // storing filename as key
+            fileKey: encryptedUpload.publicId, // Store Cloudinary public ID
             hash: fileHash,
             mimeType: req.file.mimetype,
+            // Store IV public ID in a new field (we'll add this to model)
+            ivKey: ivUpload.publicId,
         });
 
         // Cleanup temp Multer file
@@ -74,30 +76,31 @@ export const getRecord = async (req: AuthRequest, res: Response) => {
 
         if (!record) return res.status(404).json({ error: 'Record not found' });
 
-        const uploadsDir = path.join(__dirname, '../../uploads');
-        const encryptedPath = path.join(uploadsDir, record.fileKey);
-        const ivPath = path.join(uploadsDir, record.fileKey.replace('.enc', '.iv'));
+        // Download from Cloudinary instead of local filesystem
+        const { downloadFromCloud } = await import('../services/cloudinaryService');
 
-        if (!fs.existsSync(encryptedPath) || !fs.existsSync(ivPath)) {
-            return res.status(500).json({ error: 'File integrity check failed: Missing storage' });
+        try {
+            const encryptedData = await downloadFromCloud(record.fileKey);
+            const iv = await downloadFromCloud((record as any).ivKey || record.fileKey.replace('.enc', '.iv'));
+
+            // Decrypt
+            const decryptedData = decryptFile(encryptedData, iv);
+
+            // Verify Integrity
+            const currentHash = generateFileHash(decryptedData);
+            if (currentHash !== record.hash) {
+                // Alert!
+                return res.status(500).json({ error: 'SECURITY ALERT: File integrity mismatch! Data may be corrupted or tampered.' });
+            }
+
+            // Return File
+            res.setHeader('Content-Type', record.mimeType);
+            res.send(decryptedData);
+
+        } catch (cloudError) {
+            console.error('Cloudinary download error:', cloudError);
+            return res.status(500).json({ error: 'File storage retrieval failed' });
         }
-
-        const encryptedData = fs.readFileSync(encryptedPath);
-        const iv = fs.readFileSync(ivPath);
-
-        // Decrypt
-        const decryptedData = decryptFile(encryptedData, iv);
-
-        // Verify Integrity
-        const currentHash = generateFileHash(decryptedData);
-        if (currentHash !== record.hash) {
-            // Alert!
-            return res.status(500).json({ error: 'SECURITY ALERT: File integrity mismatch! Data may be corrupted or tampered.' });
-        }
-
-        // Return File
-        res.setHeader('Content-Type', record.mimeType);
-        res.send(decryptedData);
 
     } catch (error) {
         console.error(error);
