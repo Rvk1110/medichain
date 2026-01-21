@@ -11,19 +11,23 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware - CORS configuration for Vercel
+// Middleware - CORS configuration
 app.use(cors({
-    origin: [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'https://medichain-dtl.vercel.app'
-    ],
+    origin: process.env.NODE_ENV === 'production'
+        ? ['https://medichain-dtl.vercel.app']
+        : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001'],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    maxAge: 600
 }));
 
-app.use(helmet());
+// Helmet with CORS-friendly settings
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,7 +43,7 @@ app.get('/health', (req, res) => {
 const start = async () => {
     try {
         await connectDB();
-        await sequelize.sync(); // Sync models
+        await sequelize.sync(); // Sync models - creates fresh tables
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });

@@ -22,8 +22,8 @@ export const uploadRecord = async (req: AuthRequest, res: Response) => {
 
         // Upload to Cloudinary
         const { uploadToCloud } = await import('../services/cloudinaryService');
-        const encryptedFileName = `${user.id}_${Date.now()}_encrypted.bin`;
-        const ivFileName = `${user.id}_${Date.now()}_iv.bin`;
+        const encryptedFileName = `${user.id}_${Date.now()}_encrypted.enc`;
+        const ivFileName = `${user.id}_${Date.now()}_iv.dat`;
 
         const encryptedUpload = await uploadToCloud(encryptedData, encryptedFileName);
         const ivUpload = await uploadToCloud(iv, ivFileName);
@@ -108,8 +108,22 @@ export const listRecords = async (req: AuthRequest, res: Response) => {
             records = await MedicalRecord.findAll({ where: { ownerId: Number(patientId) } });
         }
 
-        res.status(200).json(records);
+        // Transform to frontend-compatible format
+        const transformedRecords = records.map(record => ({
+            id: String(record.id),
+            patientId: String(record.ownerId),
+            title: `${record.type} Record`,
+            description: `Encrypted medical record uploaded on ${record.createdAt.toLocaleDateString()}`,
+            fileName: record.fileKey.split('/').pop() || 'document',
+            fileType: record.mimeType?.includes('pdf') ? 'PDF' : (String(record.type) === 'PATHOLOGY' ? 'LAB' : 'DICOM'),
+            dateCreated: record.createdAt.toISOString(),
+            dataHash: record.hash.substring(0, 12),
+            isEmergencyAccessible: record.isEmergencyAccessible || false,
+        }));
+
+        res.status(200).json(transformedRecords);
     } catch (error) {
+        console.error('Error listing records:', error);
         res.status(500).json({ error: 'Error listing records' });
     }
 };

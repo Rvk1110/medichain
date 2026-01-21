@@ -73,13 +73,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Load user data on mount if token exists
   useEffect(() => {
     const loadData = async () => {
-      if (token) {
-        await fetchRecords();
-        await fetchAppointments();
+      if (token && state.currentUser) {
+        try {
+          await fetchRecords();
+          await fetchAppointments();
+        } catch (error) {
+          console.error('Failed to load data, token may be invalid:', error);
+          // Clear invalid token
+          logout();
+        }
       }
     };
     loadData();
-  }, [token]);
+  }, [token, state.currentUser]);
 
   // Helper to add to immutable ledger
   const addToLedger = (action: LedgerAction, details: string, dataHash: string) => {
@@ -167,6 +173,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const fetchRecords = async () => {
+    if (!token) return; // Don't fetch if not authenticated
+
     try {
       const records = await recordsAPI.list();
       setState(prev => ({ ...prev, records }));
@@ -187,6 +195,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const fetchAppointments = async () => {
+    if (!token) return; // Don't fetch if not authenticated
+
     try {
       const appointments = await appointmentsAPI.list();
       setState(prev => ({ ...prev, appointments }));
